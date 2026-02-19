@@ -1,8 +1,8 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using StackExchange.Redis;
 using vault_backend.Data;
 using vault_backend.Hubs;
 using vault_backend.Services;
@@ -13,7 +13,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Vault R2 API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Vault API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme.",
@@ -34,8 +34,14 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-builder.Services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("VaultDb"));
+// MongoDB
+builder.Services.AddSingleton<MongoDbContext>();
 
+// Redis
+var redisConnectionString = builder.Configuration["Redis:ConnectionString"]!;
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
+
+// JWT
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -62,6 +68,8 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSignalR();
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<StorageService>();
+builder.Services.AddScoped<EmailService>();
 
 var app = builder.Build();
 
@@ -76,4 +84,3 @@ app.MapControllers();
 app.MapHub<ChatHub>("/ws");
 
 app.Run();
-

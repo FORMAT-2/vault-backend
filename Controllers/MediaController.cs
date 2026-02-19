@@ -1,10 +1,11 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 using vault_backend.Data;
 using vault_backend.Models.DTOs.Media;
 using vault_backend.Models.Entities;
+using vault_backend.Services;
 
 namespace vault_backend.Controllers;
 
@@ -13,29 +14,35 @@ namespace vault_backend.Controllers;
 [Authorize]
 public class MediaController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
+    private readonly StorageService _storage;
 
-    public MediaController(AppDbContext db)
+    public MediaController(MongoDbContext db, StorageService storage)
     {
         _db = db;
+        _storage = storage;
     }
 
     [HttpGet]
-    public IActionResult GetAll()
+    public async Task<IActionResult> GetAll()
     {
-        var items = _db.MediaItems
-            .Include(m => m.Comments)
-            .Select(m => new MediaResponse
-            {
-                Id = m.Id,
-                UserId = m.UserId,
-                Username = m.Username,
-                Url = m.Url,
-                Type = m.Type,
-                Caption = m.Caption,
-                CreatedAt = m.CreatedAt,
-                Likes = m.Likes,
-                Comments = m.Comments.Select(c => new CommentResponse
+        var mediaItems = await _db.MediaItems.Find(_ => true).ToListAsync();
+        var mediaIds = mediaItems.Select(m => m.Id).ToList();
+        var comments = await _db.Comments.Find(c => mediaIds.Contains(c.MediaId)).ToListAsync();
+        var commentsByMedia = comments.GroupBy(c => c.MediaId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = mediaItems.Select(m => new MediaResponse
+        {
+            Id = m.Id,
+            UserId = m.UserId,
+            Username = m.Username,
+            Url = m.Url,
+            Type = m.Type,
+            Caption = m.Caption,
+            CreatedAt = m.CreatedAt,
+            Likes = m.Likes,
+            Comments = commentsByMedia.TryGetValue(m.Id, out var commentList)
+                ? commentList.Select(c => new CommentResponse
                 {
                     Id = c.Id,
                     UserId = c.UserId,
@@ -43,32 +50,35 @@ public class MediaController : ControllerBase
                     Text = c.Text,
                     CreatedAt = c.CreatedAt
                 }).ToList()
-            })
-            .ToList();
+                : new List<CommentResponse>()
+        }).ToList();
 
-        return Ok(items);
+        return Ok(result);
     }
 
     [HttpPost("upload")]
-    public IActionResult Upload([FromBody] UploadMediaRequest request)
+    public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string type, [FromForm] string caption)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
         var userName = User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+
+        string url;
+        using var stream = file.OpenReadStream();
+        url = await _storage.UploadAsync(file.FileName, stream, file.ContentType);
 
         var media = new Media
         {
             Id = Guid.NewGuid().ToString(),
             UserId = userId,
             Username = userName,
-            Url = request.MediaData,
-            Type = request.Type,
-            Caption = request.Caption,
+            Url = url,
+            Type = type,
+            Caption = caption,
             CreatedAt = DateTime.UtcNow
         };
 
-        _db.MediaItems.Add(media);
-        _db.SaveChanges();
+        await _db.MediaItems.InsertOneAsync(media);
 
         return Ok(new MediaResponse
         {
@@ -84,11 +94,11 @@ public class MediaController : ControllerBase
     }
 
     [HttpPost("comment")]
-    public IActionResult AddComment([FromBody] AddCommentRequest request)
+    public async Task<IActionResult> AddComment([FromBody] AddCommentRequest request)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
-        var user = _db.Users.FirstOrDefault(u => u.Id == userId);
+        var user = await _db.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
         if (user == null)
             return BadRequest(new { message = "User not found" });
 
@@ -102,8 +112,7 @@ public class MediaController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        _db.Comments.Add(comment);
-        _db.SaveChanges();
+        await _db.Comments.InsertOneAsync(comment);
 
         return Ok(new CommentResponse
         {
@@ -116,26 +125,28 @@ public class MediaController : ControllerBase
     }
 
     [HttpPost("like")]
-    public IActionResult LikeMedia([FromBody] LikeMediaRequest request)
+    public async Task<IActionResult> LikeMedia([FromBody] LikeMediaRequest request)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
-        var existing = _db.Likes.FirstOrDefault(l => l.MediaId == request.PhotoId && l.UserId == userId);
-        if (existing != null)
+
+        var existing = await _db.Likes.Find(l => l.MediaId == request.PhotoId && l.UserId == userId).AnyAsync();
+        if (existing)
             return Ok();
 
-        var media = _db.MediaItems.FirstOrDefault(m => m.Id == request.PhotoId);
+        var media = await _db.MediaItems.Find(m => m.Id == request.PhotoId).FirstOrDefaultAsync();
         if (media == null)
             return NotFound();
 
-        _db.Likes.Add(new Like
+        await _db.Likes.InsertOneAsync(new Like
         {
             Id = Guid.NewGuid().ToString(),
             MediaId = request.PhotoId,
             UserId = userId
         });
-        media.Likes++;
-        _db.SaveChanges();
+
+        var update = Builders<Media>.Update.Inc(m => m.Likes, 1);
+        await _db.MediaItems.UpdateOneAsync(m => m.Id == request.PhotoId, update);
 
         return Ok();
     }

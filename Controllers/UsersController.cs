@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
 using vault_backend.Data;
 using vault_backend.Models.DTOs.Auth;
 using vault_backend.Models.DTOs.Users;
@@ -12,50 +13,50 @@ namespace vault_backend.Controllers;
 [Authorize]
 public class UsersController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
 
-    public UsersController(AppDbContext db)
+    public UsersController(MongoDbContext db)
     {
         _db = db;
     }
 
     [HttpPut("profile")]
-    public IActionResult UpdateProfile([FromBody] UpdateProfileRequest request)
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
-        var user = _db.Users.FirstOrDefault(u => u.Id == userId);
+        var user = await _db.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
         if (user == null)
             return NotFound();
 
-        user.Username = request.Username;
-        user.Avatar = request.Avatar;
-        _db.SaveChanges();
+        var update = Builders<vault_backend.Models.Entities.User>.Update
+            .Set(u => u.Username, request.Username)
+            .Set(u => u.Avatar, request.Avatar);
+        await _db.Users.UpdateOneAsync(u => u.Id == userId, update);
 
         return Ok(new UserDto
         {
             Id = user.Id,
-            Username = user.Username,
+            Username = request.Username,
             Email = user.Email,
-            Avatar = user.Avatar
+            Avatar = request.Avatar
         });
     }
 
     [HttpGet("search")]
-    public IActionResult Search([FromQuery] string q)
+    public async Task<IActionResult> Search([FromQuery] string q)
     {
-        var lower = q.ToLower();
-        var results = _db.Users
-            .Where(u => u.Username.ToLower().Contains(lower) || u.Email.ToLower().Contains(lower))
-            .Select(u => new UserDto
-            {
-                Id = u.Id,
-                Username = u.Username,
-                Email = u.Email,
-                Avatar = u.Avatar
-            })
-            .ToList();
+        var filter = Builders<vault_backend.Models.Entities.User>.Filter.Or(
+            Builders<vault_backend.Models.Entities.User>.Filter.Regex(u => u.Username, new MongoDB.Bson.BsonRegularExpression(q, "i")),
+            Builders<vault_backend.Models.Entities.User>.Filter.Regex(u => u.Email, new MongoDB.Bson.BsonRegularExpression(q, "i")));
+        var users = await _db.Users.Find(filter).ToListAsync();
 
-        return Ok(results);
+        return Ok(users.Select(u => new UserDto
+        {
+            Id = u.Id,
+            Username = u.Username,
+            Email = u.Email,
+            Avatar = u.Avatar
+        }));
     }
 }

@@ -1,0 +1,19 @@
+# IMPORTANT: Replace all placeholder values (your-*) with actual values before deploying.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-config
+  namespace: vault
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  MongoDB__DatabaseName: "vaultdb"
+  CloudflareR2__AccountId: "your-cloudflare-account-id"
+  CloudflareR2__BucketName: "vault-media"
+  CloudflareR2__PublicUrl: "https://your-bucket.your-account.r2.dev"
+  Email__SmtpHost: "smtp.gmail.com"
+  Email__SmtpPort: "587"
+  Email__SenderEmail: "your-email@gmail.com"
+  Email__SenderName: "Vault App"
+  JwtSettings__Issuer: "VaultR2"
+  JwtSettings__Audience: "VaultR2Users"
+  JwtSettings__ExpiryInMinutes: "1440"
