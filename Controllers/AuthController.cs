@@ -77,7 +77,7 @@ public class AuthController : ControllerBase
         await db.StringSetAsync(key, otp, TimeSpan.FromMinutes(10));
 
         await _emailService.SendOtpEmailAsync(request.Email, otp);
-        return Ok(new { message = "OTP sent to email" });
+        return Ok(new { message = "If the email is registered, an OTP has been sent." });
     }
 
     [HttpPost("otp/verify")]

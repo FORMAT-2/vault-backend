@@ -41,8 +41,8 @@ public class MediaController : ControllerBase
             Caption = m.Caption,
             CreatedAt = m.CreatedAt,
             Likes = m.Likes,
-            Comments = commentsByMedia.TryGetValue(m.Id, out var cList)
-                ? cList.Select(c => new CommentResponse
+            Comments = commentsByMedia.TryGetValue(m.Id, out var commentList)
+                ? commentList.Select(c => new CommentResponse
                 {
                     Id = c.Id,
                     UserId = c.UserId,
@@ -64,10 +64,8 @@ public class MediaController : ControllerBase
         var userName = User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
         string url;
-        using (var stream = file.OpenReadStream())
-        {
-            url = await _storage.UploadAsync(file.FileName, stream, file.ContentType);
-        }
+        using var stream = file.OpenReadStream();
+        url = await _storage.UploadAsync(file.FileName, stream, file.ContentType);
 
         var media = new Media
         {

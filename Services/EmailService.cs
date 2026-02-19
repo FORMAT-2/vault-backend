@@ -18,8 +18,8 @@ public class EmailService
     {
         var smtpHost = _configuration["Email:SmtpHost"]
             ?? throw new InvalidOperationException("Email:SmtpHost is not configured.");
-        if (!int.TryParse(_configuration["Email:SmtpPort"], out var smtpPort))
-            throw new InvalidOperationException("Email:SmtpPort is missing or not a valid integer.");
+        var smtpPort = _configuration.GetValue<int?>("Email:SmtpPort")
+            ?? throw new InvalidOperationException("Email:SmtpPort is not configured.");
         var senderEmail = _configuration["Email:SenderEmail"]
             ?? throw new InvalidOperationException("Email:SenderEmail is not configured.");
         var senderPassword = _configuration["Email:SenderPassword"]
@@ -39,16 +39,18 @@ public class EmailService
             Body = $"Your one-time password is: {otp}\n\nThis code expires in 10 minutes.",
             IsBodyHtml = false
         };
-        message.To.Add(toEmail);
-
-        try
+        using (message)
         {
-            await client.SendMailAsync(message);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send OTP email to {Email}", toEmail);
-            throw;
+            message.To.Add(toEmail);
+            try
+            {
+                await client.SendMailAsync(message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send OTP email to {Email}", toEmail);
+                throw;
+            }
         }
     }
 }

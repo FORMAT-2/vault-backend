@@ -1,3 +1,4 @@
+# IMPORTANT: Replace all placeholder values (your-*) with actual values before deploying.
 apiVersion: v1
 kind: ConfigMap
 metadata:
