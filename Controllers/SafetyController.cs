@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
 using vault_backend.Data;
 using vault_backend.Models.DTOs.Safety;
 
@@ -11,20 +12,20 @@ namespace vault_backend.Controllers;
 [Authorize]
 public class SafetyController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
     private readonly ILogger<SafetyController> _logger;
 
-    public SafetyController(AppDbContext db, ILogger<SafetyController> logger)
+    public SafetyController(MongoDbContext db, ILogger<SafetyController> logger)
     {
         _db = db;
         _logger = logger;
     }
 
     [HttpGet("settings")]
-    public IActionResult GetSettings()
+    public async Task<IActionResult> GetSettings()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
-        var contacts = _db.EmergencyContacts.Where(c => c.UserId == userId).ToList();
+        var contacts = await _db.EmergencyContacts.Find(c => c.UserId == userId).ToListAsync();
         return Ok(new EmergencySettingsResponse
         {
             Contacts = contacts,

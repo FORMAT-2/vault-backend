@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
 using vault_backend.Data;
 using vault_backend.Models.DTOs.Auth;
 using vault_backend.Models.DTOs.Social;
@@ -13,22 +14,22 @@ namespace vault_backend.Controllers;
 [Authorize]
 public class SocialController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
 
-    public SocialController(AppDbContext db)
+    public SocialController(MongoDbContext db)
     {
         _db = db;
     }
 
     [HttpPost("request/send")]
-    public IActionResult SendRequest([FromBody] SendFriendRequestDto request)
+    public async Task<IActionResult> SendRequest([FromBody] SendFriendRequestDto request)
     {
         var fromUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
-        var sender = _db.Users.FirstOrDefault(u => u.Id == fromUserId);
+        var sender = await _db.Users.Find(u => u.Id == fromUserId).FirstOrDefaultAsync();
         if (sender == null)
             return BadRequest(new { message = "Sender not found" });
 
-        _db.FriendRequests.Add(new FriendRequest
+        await _db.FriendRequests.InsertOneAsync(new FriendRequest
         {
             Id = Guid.NewGuid().ToString(),
             FromUserId = fromUserId,
@@ -37,65 +38,62 @@ public class SocialController : ControllerBase
             Status = "pending",
             CreatedAt = DateTime.UtcNow
         });
-        _db.SaveChanges();
         return Ok();
     }
 
     [HttpGet("requests")]
-    public IActionResult GetRequests()
+    public async Task<IActionResult> GetRequests()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
-        var requests = _db.FriendRequests
-            .Where(r => r.ToUserId == userId)
-            .Select(r => new FriendRequestResponse
-            {
-                Id = r.Id,
-                FromUserId = r.FromUserId,
-                FromUsername = r.FromUsername,
-                ToUserId = r.ToUserId,
-                Status = r.Status,
-                CreatedAt = r.CreatedAt
-            })
-            .ToList();
-        return Ok(requests);
+        var requests = await _db.FriendRequests.Find(r => r.ToUserId == userId).ToListAsync();
+        return Ok(requests.Select(r => new FriendRequestResponse
+        {
+            Id = r.Id,
+            FromUserId = r.FromUserId,
+            FromUsername = r.FromUsername,
+            ToUserId = r.ToUserId,
+            Status = r.Status,
+            CreatedAt = r.CreatedAt
+        }));
     }
 
     [HttpPost("request/respond")]
-    public IActionResult RespondRequest([FromBody] RespondFriendRequestDto request)
+    public async Task<IActionResult> RespondRequest([FromBody] RespondFriendRequestDto request)
     {
-        var fr = _db.FriendRequests.FirstOrDefault(r => r.Id == request.RequestId);
+        var fr = await _db.FriendRequests.Find(r => r.Id == request.RequestId).FirstOrDefaultAsync();
         if (fr == null)
             return NotFound();
 
-        fr.Status = request.Status;
-        _db.SaveChanges();
+        var update = Builders<FriendRequest>.Update.Set(r => r.Status, request.Status);
+        await _db.FriendRequests.UpdateOneAsync(r => r.Id == request.RequestId, update);
         return Ok();
     }
 
     [HttpGet("friends")]
-    public IActionResult GetFriends()
+    public async Task<IActionResult> GetFriends()
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
-        var accepted = _db.FriendRequests
-            .Where(r => r.Status == "accepted" && (r.FromUserId == userId || r.ToUserId == userId))
-            .ToList();
+        var filter = Builders<FriendRequest>.Filter.And(
+            Builders<FriendRequest>.Filter.Eq(r => r.Status, "accepted"),
+            Builders<FriendRequest>.Filter.Or(
+                Builders<FriendRequest>.Filter.Eq(r => r.FromUserId, userId),
+                Builders<FriendRequest>.Filter.Eq(r => r.ToUserId, userId)));
+        var accepted = await _db.FriendRequests.Find(filter).ToListAsync();
 
         var otherIds = accepted
             .Select(r => r.FromUserId == userId ? r.ToUserId : r.FromUserId)
             .Distinct()
             .ToList();
 
-        var users = _db.Users
-            .Where(u => otherIds.Contains(u.Id))
-            .Select(u => new UserDto
-            {
-                Id = u.Id,
-                Username = u.Username,
-                Email = u.Email,
-                Avatar = u.Avatar
-            })
-            .ToList();
+        var userFilter = Builders<vault_backend.Models.Entities.User>.Filter.In(u => u.Id, otherIds);
+        var users = await _db.Users.Find(userFilter).ToListAsync();
 
-        return Ok(users);
+        return Ok(users.Select(u => new UserDto
+        {
+            Id = u.Id,
+            Username = u.Username,
+            Email = u.Email,
+            Avatar = u.Avatar
+        }));
     }
 }

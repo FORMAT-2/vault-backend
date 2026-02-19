@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MongoDB.Driver;
+using StackExchange.Redis;
 using vault_backend.Data;
 using vault_backend.Models.DTOs.Auth;
 using vault_backend.Models.Entities;
@@ -12,19 +14,23 @@ namespace vault_backend.Controllers;
 [AllowAnonymous]
 public class AuthController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
     private readonly TokenService _tokenService;
+    private readonly IConnectionMultiplexer _redis;
+    private readonly EmailService _emailService;
 
-    public AuthController(AppDbContext db, TokenService tokenService)
+    public AuthController(MongoDbContext db, TokenService tokenService, IConnectionMultiplexer redis, EmailService emailService)
     {
         _db = db;
         _tokenService = tokenService;
+        _redis = redis;
+        _emailService = emailService;
     }
 
     [HttpPost("login")]
-    public IActionResult Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var user = _db.Users.FirstOrDefault(u => u.Email == request.Email);
+        var user = await _db.Users.Find(u => u.Email == request.Email).FirstOrDefaultAsync();
         if (user == null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             return BadRequest(new { message = "Invalid credentials" });
 
@@ -37,9 +43,10 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public IActionResult Register([FromBody] RegisterRequest request)
+    public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        if (_db.Users.Any(u => u.Email == request.Email))
+        var exists = await _db.Users.Find(u => u.Email == request.Email).AnyAsync();
+        if (exists)
             return BadRequest(new { message = "Email already exists" });
 
         var user = new User
@@ -51,8 +58,7 @@ public class AuthController : ControllerBase
             Avatar = request.Avatar
         };
 
-        _db.Users.Add(user);
-        _db.SaveChanges();
+        await _db.Users.InsertOneAsync(user);
 
         var token = _tokenService.GenerateToken(user);
         return Ok(new AuthResponse
@@ -63,53 +69,47 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("otp/request")]
-    public IActionResult RequestOtp([FromBody] OtpRequestDto request)
+    public async Task<IActionResult> RequestOtp([FromBody] OtpRequestDto request)
     {
         var otp = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
-        _db.OtpRecords.Add(new OtpRecord
-        {
-            Id = Guid.NewGuid().ToString(),
-            Email = request.Email,
-            Otp = otp,
-            CreatedAt = DateTime.UtcNow,
-            IsVerified = false
-        });
-        _db.SaveChanges();
-        return Ok(new { otp });
+        var db = _redis.GetDatabase();
+        var key = $"otp:{request.Email}";
+        await db.StringSetAsync(key, otp, TimeSpan.FromMinutes(10));
+
+        await _emailService.SendOtpEmailAsync(request.Email, otp);
+        return Ok(new { message = "OTP sent to email" });
     }
 
     [HttpPost("otp/verify")]
-    public IActionResult VerifyOtp([FromBody] OtpVerifyDto request)
+    public async Task<IActionResult> VerifyOtp([FromBody] OtpVerifyDto request)
     {
-        var expiry = DateTime.UtcNow.AddMinutes(-10);
-        var record = _db.OtpRecords.FirstOrDefault(o =>
-            o.Email == request.Email && o.Otp == request.Otp &&
-            !o.IsVerified && o.CreatedAt >= expiry);
-        if (record == null)
+        var db = _redis.GetDatabase();
+        var key = $"otp:{request.Email}";
+        var storedOtp = await db.StringGetAsync(key);
+        if (storedOtp.IsNullOrEmpty || storedOtp != request.Otp)
             return BadRequest(new { message = "Invalid or expired OTP" });
 
-        record.IsVerified = true;
-        _db.SaveChanges();
+        await db.StringSetAsync($"otp:verified:{request.Email}", "1", TimeSpan.FromMinutes(15));
+        await db.KeyDeleteAsync(key);
         return Ok(new { success = true });
     }
 
     [HttpPost("password/reset")]
-    public IActionResult ResetPassword([FromBody] ResetPasswordDto request)
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto request)
     {
-        var verifiedOtp = _db.OtpRecords.FirstOrDefault(o => o.Email == request.Email && o.IsVerified);
-        if (verifiedOtp == null)
+        var db = _redis.GetDatabase();
+        var verified = await db.StringGetAsync($"otp:verified:{request.Email}");
+        if (verified.IsNullOrEmpty)
             return BadRequest(new { message = "OTP not verified" });
 
-        var user = _db.Users.FirstOrDefault(u => u.Email == request.Email);
+        var user = await _db.Users.Find(u => u.Email == request.Email).FirstOrDefaultAsync();
         if (user == null)
             return BadRequest(new { message = "User not found" });
 
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        var update = Builders<User>.Update.Set(u => u.PasswordHash, BCrypt.Net.BCrypt.HashPassword(request.NewPassword));
+        await _db.Users.UpdateOneAsync(u => u.Id == user.Id, update);
 
-        var usedOtps = _db.OtpRecords.Where(o => o.Email == request.Email).ToList();
-        _db.OtpRecords.RemoveRange(usedOtps);
-
-        _db.SaveChanges();
+        await db.KeyDeleteAsync($"otp:verified:{request.Email}");
         return Ok();
     }
 }

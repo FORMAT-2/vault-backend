@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using MongoDB.Driver;
 using vault_backend.Data;
 using vault_backend.Hubs;
 using vault_backend.Models.DTOs.Chat;
@@ -14,35 +15,38 @@ namespace vault_backend.Controllers;
 [Authorize]
 public class ChatController : ControllerBase
 {
-    private readonly AppDbContext _db;
+    private readonly MongoDbContext _db;
     private readonly IHubContext<ChatHub> _hubContext;
 
-    public ChatController(AppDbContext db, IHubContext<ChatHub> hubContext)
+    public ChatController(MongoDbContext db, IHubContext<ChatHub> hubContext)
     {
         _db = db;
         _hubContext = hubContext;
     }
 
     [HttpGet("messages/{friendId}")]
-    public IActionResult GetMessages(string friendId)
+    public async Task<IActionResult> GetMessages(string friendId)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
-        var messages = _db.Messages
-            .Where(m => (m.SenderId == userId && m.ReceiverId == friendId) ||
-                        (m.SenderId == friendId && m.ReceiverId == userId))
-            .OrderBy(m => m.Timestamp)
-            .Select(m => new MessageResponse
-            {
-                Id = m.Id,
-                SenderId = m.SenderId,
-                SenderName = m.SenderName,
-                ReceiverId = m.ReceiverId,
-                Text = m.Text,
-                Timestamp = m.Timestamp
-            })
-            .ToList();
+        var filter = Builders<Message>.Filter.Or(
+            Builders<Message>.Filter.And(
+                Builders<Message>.Filter.Eq(m => m.SenderId, userId),
+                Builders<Message>.Filter.Eq(m => m.ReceiverId, friendId)),
+            Builders<Message>.Filter.And(
+                Builders<Message>.Filter.Eq(m => m.SenderId, friendId),
+                Builders<Message>.Filter.Eq(m => m.ReceiverId, userId)));
+        var sort = Builders<Message>.Sort.Ascending(m => m.Timestamp);
+        var messages = await _db.Messages.Find(filter).Sort(sort).ToListAsync();
 
-        return Ok(messages);
+        return Ok(messages.Select(m => new MessageResponse
+        {
+            Id = m.Id,
+            SenderId = m.SenderId,
+            SenderName = m.SenderName,
+            ReceiverId = m.ReceiverId,
+            Text = m.Text,
+            Timestamp = m.Timestamp
+        }));
     }
 
     [HttpPost("send")]
@@ -62,8 +66,7 @@ public class ChatController : ControllerBase
             Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp
         };
 
-        _db.Messages.Add(message);
-        _db.SaveChanges();
+        await _db.Messages.InsertOneAsync(message);
 
         var response = new MessageResponse
         {
