@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using vault_backend.Data;
@@ -21,7 +22,9 @@ public class UsersController : ControllerBase
     [HttpPut("profile")]
     public IActionResult UpdateProfile([FromBody] UpdateProfileRequest request)
     {
-        var user = _db.Users.FirstOrDefault(u => u.Id == request.UserId);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+        var user = _db.Users.FirstOrDefault(u => u.Id == userId);
         if (user == null)
             return NotFound();
 
