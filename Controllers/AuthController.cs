@@ -81,9 +81,12 @@ public class AuthController : ControllerBase
     [HttpPost("otp/verify")]
     public IActionResult VerifyOtp([FromBody] OtpVerifyDto request)
     {
-        var record = _db.OtpRecords.FirstOrDefault(o => o.Email == request.Email && o.Otp == request.Otp);
+        var expiry = DateTime.UtcNow.AddMinutes(-10);
+        var record = _db.OtpRecords.FirstOrDefault(o =>
+            o.Email == request.Email && o.Otp == request.Otp &&
+            !o.IsVerified && o.CreatedAt >= expiry);
         if (record == null)
-            return BadRequest(new { message = "Invalid OTP" });
+            return BadRequest(new { message = "Invalid or expired OTP" });
 
         record.IsVerified = true;
         _db.SaveChanges();
@@ -93,8 +96,8 @@ public class AuthController : ControllerBase
     [HttpPost("password/reset")]
     public IActionResult ResetPassword([FromBody] ResetPasswordDto request)
     {
-        var verified = _db.OtpRecords.Any(o => o.Email == request.Email && o.IsVerified);
-        if (!verified)
+        var verifiedOtp = _db.OtpRecords.FirstOrDefault(o => o.Email == request.Email && o.IsVerified);
+        if (verifiedOtp == null)
             return BadRequest(new { message = "OTP not verified" });
 
         var user = _db.Users.FirstOrDefault(u => u.Email == request.Email);
@@ -102,6 +105,10 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "User not found" });
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+
+        var usedOtps = _db.OtpRecords.Where(o => o.Email == request.Email).ToList();
+        _db.OtpRecords.RemoveRange(usedOtps);
+
         _db.SaveChanges();
         return Ok();
     }

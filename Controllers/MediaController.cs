@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -51,11 +52,15 @@ public class MediaController : ControllerBase
     [HttpPost("upload")]
     public IActionResult Upload([FromBody] UploadMediaRequest request)
     {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+        var userName = User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+
         var media = new Media
         {
             Id = Guid.NewGuid().ToString(),
-            UserId = request.UserId,
-            Username = request.Username,
+            UserId = userId,
+            Username = userName,
             Url = request.MediaData,
             Type = request.Type,
             Caption = request.Caption,
@@ -81,7 +86,9 @@ public class MediaController : ControllerBase
     [HttpPost("comment")]
     public IActionResult AddComment([FromBody] AddCommentRequest request)
     {
-        var user = _db.Users.FirstOrDefault(u => u.Id == request.UserId);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+        var user = _db.Users.FirstOrDefault(u => u.Id == userId);
         if (user == null)
             return BadRequest(new { message = "User not found" });
 
@@ -89,7 +96,7 @@ public class MediaController : ControllerBase
         {
             Id = Guid.NewGuid().ToString(),
             MediaId = request.PhotoId,
-            UserId = request.UserId,
+            UserId = userId,
             Username = user.Username,
             Text = request.Text,
             CreatedAt = DateTime.UtcNow
@@ -111,7 +118,9 @@ public class MediaController : ControllerBase
     [HttpPost("like")]
     public IActionResult LikeMedia([FromBody] LikeMediaRequest request)
     {
-        var existing = _db.Likes.FirstOrDefault(l => l.MediaId == request.PhotoId && l.UserId == request.UserId);
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+        var existing = _db.Likes.FirstOrDefault(l => l.MediaId == request.PhotoId && l.UserId == userId);
         if (existing != null)
             return Ok();
 
@@ -123,7 +132,7 @@ public class MediaController : ControllerBase
         {
             Id = Guid.NewGuid().ToString(),
             MediaId = request.PhotoId,
-            UserId = request.UserId
+            UserId = userId
         });
         media.Likes++;
         _db.SaveChanges();

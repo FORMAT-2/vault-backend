@@ -48,11 +48,15 @@ public class ChatController : ControllerBase
     [HttpPost("send")]
     public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
     {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userId == null) return Unauthorized();
+        var userName = User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
+
         var message = new Message
         {
             Id = Guid.NewGuid().ToString(),
-            SenderId = request.SenderId,
-            SenderName = request.SenderName,
+            SenderId = userId,
+            SenderName = userName,
             ReceiverId = request.ReceiverId,
             Text = request.Text,
             Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp
