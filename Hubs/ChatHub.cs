@@ -1,12 +1,21 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using MongoDB.Driver;
+using vault_backend.Data;
 
 namespace vault_backend.Hubs;
 
 [Authorize]
 public class ChatHub : Hub
 {
+    private readonly MongoDbContext _db;
+
+    public ChatHub(MongoDbContext db)
+    {
+        _db = db;
+    }
+
     // Automatically adds connected user to their own "user group"
     public override async Task OnConnectedAsync()
     {
@@ -27,23 +36,28 @@ public class ChatHub : Hub
     // WebRTC Signaling: Initiate a call
     public async Task INITIATE_CALL(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
-        var from = data.GetProperty("from").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
         var callerId = Context.UserIdentifier;
 
         await Clients.Group(to).SendAsync("INCOMING_CALL", new
         {
             offer = data.GetProperty("offer"),
-            callType = data.GetProperty("callType").GetString(),
+            callType = data.TryGetProperty("callType", out var ct) ? ct.GetString() : "audio",
             fromId = callerId,
-            from = from
+            from = callerId
         });
     }
 
     // WebRTC Signaling: Answer a call
     public async Task ANSWER_CALL(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
 
         await Clients.Group(to).SendAsync("CALL_ANSWER", new
         {
@@ -54,7 +68,10 @@ public class ChatHub : Hub
     // WebRTC Signaling: Exchange ICE candidates
     public async Task SEND_ICE_CANDIDATE(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
 
         await Clients.Group(to).SendAsync("ICE_CANDIDATE", new
         {
@@ -65,7 +82,10 @@ public class ChatHub : Hub
     // WebRTC Signaling: End a call
     public async Task END_CALL(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
 
         await Clients.Group(to).SendAsync("END_CALL");
     }
@@ -73,9 +93,12 @@ public class ChatHub : Hub
     // Miss You Signal (Vibration)
     public async Task MISS_YOU_SIGNAL(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
-        var from = data.GetProperty("from").GetString()!;
-        var message = data.GetProperty("message").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
+        var from = Context.UserIdentifier;
+        var message = data.TryGetProperty("message", out var msgProp) ? msgProp.GetString() ?? "" : "";
 
         await Clients.Group(to).SendAsync("MISS_YOU_SIGNAL", new
         {
@@ -84,25 +107,34 @@ public class ChatHub : Hub
         });
     }
 
-    // Real-time Location Update
+    // Real-time Location Update - sends only to the user's partner
     public async Task UPDATE_LOCATION(JsonElement data)
     {
         var userId = Context.UserIdentifier;
-        // Broadcast location update to all other connected clients
-        // The partner filtering is handled client-side
-        await Clients.Others.SendAsync("PARTNER_LOCATION_UPDATE", (object)data);
+        if (string.IsNullOrEmpty(userId))
+            return;
+
+        // Look up the user's partner and send only to them
+        var user = await _db.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
+        if (user?.PartnerId != null)
+        {
+            await Clients.Group(user.PartnerId).SendAsync("PARTNER_LOCATION_UPDATE", (object)data);
+        }
     }
 
     // SOS Alert (Real-time)
     public async Task SOS_ALERT(JsonElement data)
     {
-        var to = data.GetProperty("to").GetString()!;
-        var message = data.GetProperty("message").GetString()!;
+        if (!data.TryGetProperty("to", out var toProp) || string.IsNullOrEmpty(toProp.GetString()))
+            return;
+
+        var to = toProp.GetString()!;
+        var message = data.TryGetProperty("message", out var msgProp) ? msgProp.GetString() ?? "" : "";
 
         await Clients.Group(to).SendAsync("SOS_ALERT", new
         {
             from = Context.UserIdentifier,
-            location = data.GetProperty("location"),
+            location = data.TryGetProperty("location", out var loc) ? (object)loc : null,
             message = message
         });
     }

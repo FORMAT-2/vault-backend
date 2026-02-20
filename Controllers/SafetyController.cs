@@ -46,7 +46,7 @@ public class SafetyController : ControllerBase
         {
             var contacts = request.Contacts.Select(c => new EmergencyContact
             {
-                Id = string.IsNullOrEmpty(c.Id) ? Guid.NewGuid().ToString() : c.Id,
+                Id = Guid.NewGuid().ToString(),
                 UserId = userId,
                 Name = c.Name,
                 Phone = c.Phone

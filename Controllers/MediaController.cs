@@ -74,8 +74,12 @@ public class MediaController : ControllerBase
         var base64Data = mediaData[(commaIndex + 1)..];
         var bytes = Convert.FromBase64String(base64Data);
 
-        // Extract content type and extension
+        // Extract and validate content type
         var contentType = header.Replace("data:", "").Replace(";base64", "");
+        var allowedTypes = new HashSet<string> { "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm", "video/quicktime" };
+        if (!allowedTypes.Contains(contentType))
+            return BadRequest(new { message = "Unsupported media type" });
+
         var extension = contentType.Split('/').LastOrDefault() ?? "bin";
         var fileName = $"{Guid.NewGuid()}.{extension}";
 
@@ -85,8 +89,8 @@ public class MediaController : ControllerBase
         var media = new Media
         {
             Id = Guid.NewGuid().ToString(),
-            UserId = request.UserId ?? userId,
-            Username = request.Username ?? userName,
+            UserId = userId,
+            Username = userName,
             Url = url,
             Type = request.Type,
             Caption = request.Caption,

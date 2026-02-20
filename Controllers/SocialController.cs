@@ -111,6 +111,12 @@ public class SocialController : ControllerBase
     public async Task<IActionResult> SetPartner([FromBody] SetPartnerRequest request)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+
+        // Validate that the partner exists
+        var partner = await _db.Users.Find(u => u.Id == request.PartnerId).FirstOrDefaultAsync();
+        if (partner == null)
+            return BadRequest(new { message = "Partner user not found" });
+
         var update = Builders<vault_backend.Models.Entities.User>.Update.Set(u => u.PartnerId, request.PartnerId);
         await _db.Users.UpdateOneAsync(u => u.Id == userId, update);
         return Ok();
