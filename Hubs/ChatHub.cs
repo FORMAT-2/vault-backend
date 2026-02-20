@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace vault_backend.Hubs;
 
+[Authorize]
 public class ChatHub : Hub
 {
     public async Task JoinChat(string userId)
