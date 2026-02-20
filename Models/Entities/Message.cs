@@ -13,4 +13,12 @@ public class Message
     public string ReceiverId { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string? Type { get; set; } = "text";
+    public MessageLocation? Location { get; set; }
+}
+
+public class MessageLocation
+{
+    public double Lat { get; set; }
+    public double Lng { get; set; }
 }

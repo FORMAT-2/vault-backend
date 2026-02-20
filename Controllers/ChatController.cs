@@ -45,7 +45,9 @@ public class ChatController : ControllerBase
             SenderName = m.SenderName,
             ReceiverId = m.ReceiverId,
             Text = m.Text,
-            Timestamp = m.Timestamp
+            Timestamp = m.Timestamp,
+            Type = m.Type ?? "text",
+            Location = m.Location != null ? new Models.DTOs.Chat.LocationData { Lat = m.Location.Lat, Lng = m.Location.Lng } : null
         }));
     }
 
@@ -63,7 +65,9 @@ public class ChatController : ControllerBase
             SenderName = userName,
             ReceiverId = request.ReceiverId,
             Text = request.Text,
-            Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp
+            Timestamp = request.Timestamp == default ? DateTime.UtcNow : request.Timestamp,
+            Type = request.Type ?? "text",
+            Location = request.Location != null ? new Models.Entities.MessageLocation { Lat = request.Location.Lat, Lng = request.Location.Lng } : null
         };
 
         await _db.Messages.InsertOneAsync(message);
@@ -75,7 +79,9 @@ public class ChatController : ControllerBase
             SenderName = message.SenderName,
             ReceiverId = message.ReceiverId,
             Text = message.Text,
-            Timestamp = message.Timestamp
+            Timestamp = message.Timestamp,
+            Type = message.Type ?? "text",
+            Location = message.Location != null ? new Models.DTOs.Chat.LocationData { Lat = message.Location.Lat, Lng = message.Location.Lng } : null
         };
 
         await _hubContext.Clients.Group(request.ReceiverId).SendAsync("ReceiveMessage", response);
