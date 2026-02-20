@@ -79,6 +79,7 @@ public class ChatController : ControllerBase
         };
 
         await _hubContext.Clients.Group(request.ReceiverId).SendAsync("ReceiveMessage", response);
+        await _hubContext.Clients.Group(userId).SendAsync("ReceiveMessage", response);
 
         return Ok();
     }
