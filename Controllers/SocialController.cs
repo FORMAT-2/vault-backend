@@ -29,6 +29,13 @@ public class SocialController : ControllerBase
         if (sender == null)
             return BadRequest(new { message = "Sender not found" });
 
+        var existing = await _db.FriendRequests.Find(r =>
+            ((r.FromUserId == fromUserId && r.ToUserId == request.ToUserId) ||
+             (r.FromUserId == request.ToUserId && r.ToUserId == fromUserId)) &&
+            (r.Status == "pending" || r.Status == "accepted")).FirstOrDefaultAsync();
+        if (existing != null)
+            return Conflict(new { message = "Friend request already exists" });
+
         await _db.FriendRequests.InsertOneAsync(new FriendRequest
         {
             Id = Guid.NewGuid().ToString(),
@@ -60,6 +67,9 @@ public class SocialController : ControllerBase
     [HttpPost("request/respond")]
     public async Task<IActionResult> RespondRequest([FromBody] RespondFriendRequestDto request)
     {
+        if (request.Status != "accepted" && request.Status != "rejected")
+            return BadRequest(new { message = "Status must be 'accepted' or 'rejected'" });
+
         var fr = await _db.FriendRequests.Find(r => r.Id == request.RequestId).FirstOrDefaultAsync();
         if (fr == null)
             return NotFound();
