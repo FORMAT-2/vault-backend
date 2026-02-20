@@ -39,7 +39,12 @@ builder.Services.AddSingleton<MongoDbContext>();
 
 // Redis
 var redisConnectionString = builder.Configuration["Redis:ConnectionString"]!;
-builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var options = ConfigurationOptions.Parse(redisConnectionString);
+    options.AbortOnConnectFail = false;
+    return ConnectionMultiplexer.Connect(options);
+});
 
 // JWT
 var jwtSecret = builder.Configuration["JwtSettings:Secret"]!;
