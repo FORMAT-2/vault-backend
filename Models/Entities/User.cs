@@ -12,4 +12,5 @@ public class User
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string? Avatar { get; set; }
+    public string? PartnerId { get; set; }
 }

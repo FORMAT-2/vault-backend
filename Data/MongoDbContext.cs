@@ -25,4 +25,5 @@ public class MongoDbContext
     public IMongoCollection<Message> Messages => _database.GetCollection<Message>("messages");
     public IMongoCollection<EmergencyContact> EmergencyContacts => _database.GetCollection<EmergencyContact>("emergencyContacts");
     public IMongoCollection<OtpRecord> OtpRecords => _database.GetCollection<OtpRecord>("otpRecords");
+    public IMongoCollection<EmergencySettings> EmergencySettings => _database.GetCollection<EmergencySettings>("emergencySettings");
 }

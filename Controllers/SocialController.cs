@@ -106,4 +106,33 @@ public class SocialController : ControllerBase
             Avatar = u.Avatar
         }));
     }
+
+    [HttpPost("partner/set")]
+    public async Task<IActionResult> SetPartner([FromBody] SetPartnerRequest request)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var update = Builders<vault_backend.Models.Entities.User>.Update.Set(u => u.PartnerId, request.PartnerId);
+        await _db.Users.UpdateOneAsync(u => u.Id == userId, update);
+        return Ok();
+    }
+
+    [HttpGet("partner")]
+    public async Task<IActionResult> GetPartner()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var user = await _db.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
+        if (user == null)
+            return NotFound();
+
+        return Ok(new GetPartnerResponse { PartnerId = user.PartnerId });
+    }
+
+    [HttpDelete("partner/remove")]
+    public async Task<IActionResult> RemovePartner()
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value!;
+        var update = Builders<vault_backend.Models.Entities.User>.Update.Set(u => u.PartnerId, null);
+        await _db.Users.UpdateOneAsync(u => u.Id == userId, update);
+        return Ok();
+    }
 }

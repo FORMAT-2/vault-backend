@@ -57,24 +57,39 @@ public class MediaController : ControllerBase
     }
 
     [HttpPost("upload")]
-    public async Task<IActionResult> Upload([FromForm] IFormFile file, [FromForm] string type, [FromForm] string caption)
+    public async Task<IActionResult> Upload([FromBody] UploadMediaRequest request)
     {
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userId == null) return Unauthorized();
         var userName = User.FindFirst(ClaimTypes.Name)?.Value ?? string.Empty;
 
         string url;
-        using var stream = file.OpenReadStream();
-        url = await _storage.UploadAsync(file.FileName, stream, file.ContentType);
+        // Parse Base64 data URL: "data:<mime>;base64,<data>"
+        var mediaData = request.MediaData;
+        var commaIndex = mediaData.IndexOf(',');
+        if (commaIndex < 0)
+            return BadRequest(new { message = "Invalid mediaData format" });
+
+        var header = mediaData[..commaIndex]; // e.g. "data:image/jpeg;base64"
+        var base64Data = mediaData[(commaIndex + 1)..];
+        var bytes = Convert.FromBase64String(base64Data);
+
+        // Extract content type and extension
+        var contentType = header.Replace("data:", "").Replace(";base64", "");
+        var extension = contentType.Split('/').LastOrDefault() ?? "bin";
+        var fileName = $"{Guid.NewGuid()}.{extension}";
+
+        using var stream = new MemoryStream(bytes);
+        url = await _storage.UploadAsync(fileName, stream, contentType);
 
         var media = new Media
         {
             Id = Guid.NewGuid().ToString(),
-            UserId = userId,
-            Username = userName,
+            UserId = request.UserId ?? userId,
+            Username = request.Username ?? userName,
             Url = url,
-            Type = type,
-            Caption = caption,
+            Type = request.Type,
+            Caption = request.Caption,
             CreatedAt = DateTime.UtcNow
         };
 

@@ -4,4 +4,5 @@ public class TriggerSosRequest
 {
     public string UserId { get; set; } = string.Empty;
     public LocationDto Location { get; set; } = new();
+    public bool NotifyPartner { get; set; }
 }
