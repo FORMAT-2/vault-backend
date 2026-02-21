@@ -7,9 +7,7 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: "Production"
   MongoDB__DatabaseName: "vaultdb"
-  CloudflareR2__AccountId: "your-cloudflare-account-id"
-  CloudflareR2__BucketName: "vault-media"
-  CloudflareR2__PublicUrl: "https://your-bucket.your-account.r2.dev"
+  AzureBlobStorage__ContainerName: "vault-media"
   Email__SmtpHost: "smtp.gmail.com"
   Email__SmtpPort: "587"
   Email__SenderEmail: "your-email@gmail.com"
