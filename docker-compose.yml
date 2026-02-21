@@ -10,6 +10,8 @@ services:
       - MongoDB__ConnectionString=mongodb://mongo:27017
       - MongoDB__DatabaseName=vaultdb
       - Redis__ConnectionString=redis:6379
+      - AzureBlobStorage__ConnectionString=DefaultEndpointsProtocol=https;AccountName=your-storage-account;AccountKey=your-account-key;EndpointSuffix=core.windows.net
+      - AzureBlobStorage__ContainerName=vault-media
     depends_on:
       - mongo
       - redis

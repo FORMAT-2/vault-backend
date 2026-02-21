@@ -38,16 +38,11 @@ spec:
                 secretKeyRef:
                   name: vault-secrets
                   key: redis-connection-string
-            - name: CloudflareR2__AccessKeyId
+            - name: AzureBlobStorage__ConnectionString
               valueFrom:
                 secretKeyRef:
                   name: vault-secrets
-                  key: r2-access-key-id
-            - name: CloudflareR2__SecretAccessKey
-              valueFrom:
-                secretKeyRef:
-                  name: vault-secrets
-                  key: r2-secret-access-key
+                  key: azure-blob-connection-string
             - name: Email__SenderPassword
               valueFrom:
                 secretKeyRef:
